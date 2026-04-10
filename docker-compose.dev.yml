@@ -1,7 +1,7 @@
 services:
   backend:
     build: ./backend
-    command: uvicorn src.app:app --host 0.0.0.0 --reload --port 8000
+    command: sh -c "alembic upgrade head && uvicorn src.app:app --host 0.0.0.0 --reload --port 8000"
     container_name: backend
     volumes:
       - ./backend:/backend
@@ -9,7 +9,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - backend-db
+      backend-db:
+        condition: service_healthy
+      backend-redis:
+        condition: service_started
 
   backend-worker:
     build: ./backend
@@ -19,16 +22,24 @@ services:
     volumes:
       - ./backend:/backend
     depends_on:
-      - backend-db
+      backend-db:
+        condition: service_healthy
+      backend-redis:
+        condition: service_started
 
   backend-db:
     image: postgres:latest
     container_name: backend-db
     ports:
-      - "5433:5433"
+      - "5433:5432"
     env_file: ".env.dev"
     volumes:
       - backend-db-volume:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend-redis:
     image: redis:latest
