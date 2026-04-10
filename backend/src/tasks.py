@@ -1,26 +1,14 @@
 import asyncio
 import os
 from pathlib import Path
+
 from celery import Celery
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+from src.db import async_session_maker, STORAGE_DIR
 from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR, DB_URL
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
-_worker_loop: asyncio.AbstractEventLoop | None = None
-
-
-def run_in_worker_loop(coroutine):
-    global _worker_loop
-    if _worker_loop is None or _worker_loop.is_closed():
-        _worker_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_worker_loop)
-    return _worker_loop.run_until_complete(coroutine)
-
-
 celery_app = Celery("file_tasks", broker=REDIS_URL, backend=REDIS_URL)
-engine = create_async_engine(DB_URL)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def _scan_file_for_threats(file_id: str) -> None:
@@ -35,10 +23,8 @@ async def _scan_file_for_threats(file_id: str) -> None:
 
         if extension in {".exe", ".bat", ".cmd", ".sh", ".js"}:
             reasons.append(f"suspicious extension {extension}")
-
         if file_item.size > 10 * 1024 * 1024:
             reasons.append("file is larger than 10 MB")
-
         if extension == ".pdf" and file_item.mime_type not in {"application/pdf", "application/octet-stream"}:
             reasons.append("pdf extension does not match mime type")
 
@@ -109,14 +95,14 @@ async def _send_file_alert(file_id: str) -> None:
 
 @celery_app.task
 def scan_file_for_threats(file_id: str) -> None:
-    run_in_worker_loop(_scan_file_for_threats(file_id))
+    asyncio.run(_scan_file_for_threats(file_id))
 
 
 @celery_app.task
 def extract_file_metadata(file_id: str) -> None:
-    run_in_worker_loop(_extract_file_metadata(file_id))
+    asyncio.run(_extract_file_metadata(file_id))
 
 
 @celery_app.task
 def send_file_alert(file_id: str) -> None:
-    run_in_worker_loop(_send_file_alert(file_id))
+    asyncio.run(_send_file_alert(file_id))
