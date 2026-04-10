@@ -3,17 +3,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from src.db import async_session_maker, STORAGE_DIR
+from src.db import STORAGE_DIR
+from src.deps import get_session
 from src.schemas import FileItem, FileUpdate, PaginatedResponse
 from src.services import files as files_service
 from src.tasks import scan_file_for_threats
 
 router = APIRouter(prefix="/files", tags=["files"])
-
-
-async def get_session():
-    async with async_session_maker() as session:
-        yield session
 
 
 @router.get("", response_model=PaginatedResponse[FileItem])
